@@ -6,11 +6,10 @@
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { font: 13px Helvetica, Arial; }
       form { background: #000; padding: 3px; position: fixed; bottom: 0; width: 100%; }
-
       form input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
       form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
       #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages li { padding: 5px 10px; }
+      #messages li { padding: 5px 10px; id:"li"}
       #messages li:nth-child(odd) { background: #eee; }
       #messages { margin-bottom: 80px }
     </style>
@@ -33,19 +32,8 @@
 
           var socket = io.connect('', {query: 'name='+name});
 
-          socket.on('connected', function(msg){
-              $('#messages').append($('<li>').text(msg));
-              window.scrollTo(0, document.body.scrollHeight);
-          });
 
-          socket.on('changename', function(username){
-              do {
-                  name = prompt(username + " has been used, please change a name :)");
-              }while(name == null || name == "");
-
-              socket = io.connect('', {query: 'name='+name});
-          });
-
+          //[try]send messenge when Enter
           /*$('#form').onkeypress(function(e){
               if (e.which == 13)
                   console.log("enter is press by "+name);
@@ -59,15 +47,15 @@
               }
           };*/
 
+
+          <!--region client send event to server-->
           $('#send').click(function(){
-              console.log("enter is press by "+name);
               if($('#s').val() != "" && $('#m').val() != "")
               {
                   socket.emit('secret message', name, $('#s').val(), $('#m').val());
                   $('#m').val('');
                   return false;
               }
-
 
               if($('#m').val() != "")
               {
@@ -85,12 +73,27 @@
               return false;
           });
 
-
           $('#m').on('keyup', function(){
               socket.emit('typing', name);
               //$('#messages').append($('<li>').text('someone is typing'));
               //return false;
           });//*/
+          <!--endregion-->
+
+
+          <!--region client listen event from server-->
+          socket.on('connected', function(msg){
+              $('#messages').append($('<li>').text(msg));
+              window.scrollTo(0, document.body.scrollHeight);
+          });
+
+          socket.on('changename', function(username){
+              do {
+                  name = prompt(username + " has been used, please change a name :)");
+              }while(name == null || name == "");
+
+              socket = io.connect('', {query: 'name='+name});
+          });
 
           socket.on('chat message', function(name, msg){
             $('#messages').append($('<li>').text(name+": "+msg));
@@ -107,6 +110,19 @@
               $('#messages').append($('<li>').text(msg));
               window.scrollTo(0, document.body.scrollHeight);
           });
+
+          socket.on('load history', function(history){
+              history.forEach(
+                function(value, index){
+                  msg = value.name+': '+value.log;
+                  $('#messages').prepend($('<li>').text(msg));
+                  window.scrollTo(0, document.body.scrollHeight);//*/
+
+              });
+              //var container = document.getElementById('li');
+              //msg.insertBefore(document.createElement($('<li>').text(msg)), container.firstChild);
+          });
+          <!--endregion-->
 
 
 

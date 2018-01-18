@@ -3,82 +3,90 @@ var http = require('http').Server(app);
 var io = require('socket.io')(http);
 var port = process.env.PORT || 3000;
 
-var onlineUser = [];
-var onlineId = [];
-var list =[];
+var list = [];
 
 var mysql      = require('mysql');
-var connection = mysql.createConnection({
+/*var connection = mysql.createConnection({
         "host": "localhost",
         "user": "root",
         "password": "",
         "database": "test"
     });
-connection.connect();
+connection.connect();*/
 
+var pool  = mysql.createPool({
+    host: "localhost",
+    user: "root",
+    password: "",
+    database: "test"
+});
+
+pool.getConnection(function(err, connection) {
+    // connected! (unless `err` is set)
+});
+
+//將聊天紀錄存入DB
 function ChatLog(name, msg){
     //connection doent have to reconnet DB everytime
     //connection.connect();
-
+    var table = 'chat';
     var data = { name: name, log: msg };
-    var q = connection.query('INSERT INTO chat SET ?', data, function (error, results, fields) {
+    var q = pool.query('INSERT INTO ?? SET ?', [table, data], function (error, results, fields) {
         //[try] to release
         //connection.release();
 
         if (error) throw error;
     });
-    console.log(q.sql);
+    //console.log(q.sql);
     //connection.end();
 
     return q;
 };
 
+//將聊天紀錄存入DB
 function ConnectLog(name){
-    var data = { name: name, log: ' connected' };
-    var q = connection.query('INSERT INTO chat SET ?', data, function (error, results, fields) {
-        if (error) throw error;
-    });
-    console.log(q.sql);
-    return q;
+    ChatLog(name, ' connected');
 }
 
+//將上線紀錄存入DB
 function DisconnectLog(name){
-    var data = { name: name, log: ' Disconnected' };
-    var q = connection.query('INSERT INTO chat SET ?', data, function (error, results, fields) {
-        if (error) throw error;
-    });
-    console.log(q.sql);
-    return q;
+    ChatLog(name, ' Disconnected');
 }
 
-function getHistoryChat(){
+function getlastindex(callback) {
+    pool.query('SELECT COUNT(id) AS countrow FROM chat', function (error, results, fields) {
+        if (error) throw error;
+
+        console.log('row count '+ results[0].countrow);
+
+        if(callback instanceof Function)  callback(results[0].countrow);
+    });
+}
+
+//抓舊聊天紀錄
+function getHistoryChat(callback){
     var lim = 10 ;
-    var r = [];
 
-    var rowcount;
+    //現在用不到兩層callback, 但先留著參考
+    getlastindex( function(index){
+        index -= lim;
+        //pool.query('SELECT ?? FROM ?? LIMIT ? OFFSET ? ORDER BY ?? DESC',[['name', 'log'],'chat', lim, index, 'id'], function (error, results, fields) {
+        pool.query('SELECT ?? FROM ?? ORDER BY ?? DESC LIMIT ?',[['name', 'log'],'chat', 'id', lim], function (error, results, fields) {
+            if (error) throw error;
 
-    connection.query('SELECT 1 + 1 AS solution', function (error, results, fields) {
-        if (error) throw error;
-        console.log('The solution is: ', results[0].solution);
-        console.log('solution '+fields[0]);
-        rowcount = results[0].solution;
+            if(callback instanceof Function)  callback(results);
+        })
     });
+}
 
-    connection.query('SELECT COUNT(id) as countrow FROM chat', function (error, results, fields) {
-        if (error) throw error;
+function getListKey(targetvalue){
+    for (var key in list) {
+        var value = list[key];
 
-        rowcount = results[0].countrow;
-    });
-
-    console.log("count: ", rowcount);
-
-    var q = connection.query('SELECT * FROM chat ORDER BY id LIMIT '+(rowcount-lim)+','+lim, function (error, results, fields) {
-        if (error) throw error;
-
-        r = results;
-    });
-    console.log(q.sql);
-    return r;
+        if(value == targetvalue)
+            return key;
+    }
+    return -1;
 }
 
 app.get('/', function(req, res){
@@ -90,10 +98,27 @@ io.on('connection', function(socket){
     var userinfo = {};
     var username = socket.handshake.query.name;
 
-    console.log(username + ' connected');
-    ConnectLog(username);
+    //[try]deloye each room
+    var program = [];
+    /*if(roomList[program_id])
+    {
+        //chat room exist, do nothing
+    }
+    else {
+        socket.on('program'+program_id, function(name, msg){
+            console.log(name +' send messenge: '+msg);
+
+            console.log( ChatLog(name, msg).sql + " function callback");
+
+            io.emit('chat message', name, msg);
+        });
+    }*/
+
+    //上線連線測試
+    //console.log(username + ' connected into db with id: ' + pool.threadId);
+    //ConnectLog(username);
     io.emit('connected', username+" is in, let's say hello!!");
-    //[嘗試]當重複名稱要求重新輸入
+    //[try]當重複名稱要求重新輸入
     /*if(onlineUser.indexOf(username) == -1)
     {
         console.log(username + ' connected');
@@ -106,24 +131,19 @@ io.on('connection', function(socket){
         return false;
     }*/
 
-    //建立目前上限名單
-   /* onlineId.push(socket.id);
-    onlineUser.push(username);
-    console.log(onlineUser);
-    console.log(onlineId);
-    console.log(onlineId.length);*/
-
-    list[socket.id] = socket.handshake.query;
+    //建立目前上線名單
+    list[socket.id] = username;
     console.log(list);
-    console.log(list.length);
 
-    //送給新user歷史紀錄
+    //[try]送給新user歷史紀錄
     var hisLog = [];
-    //getHistoryChat();
-    //console.log(hisLog.length);
+    getHistoryChat(function(results){
+        hisLog = results;
+        //console.log(hisLog);
+        console.log(hisLog.length);
 
-    //連線測試
-    console.log('connected as id ' + connection.threadId);
+        io.sockets.connected[socket.id].emit('load history', hisLog);
+    });
 
     //聆聽收到訊息
     socket.on('chat message', function(name, msg){
@@ -134,6 +154,7 @@ io.on('connection', function(socket){
       io.emit('chat message', name, msg);
     });
 
+    //聆聽誰正在輸入，目前只有show在web console
     socket.on('typing', function(name){
         //console.log(name +' chatting messenge: '+msg);
         io.emit('whoistyping', name);
@@ -141,35 +162,31 @@ io.on('connection', function(socket){
 
     //聆聽傳遞私訊
     socket.on('secret message', function(sender, target, msg){
-        //console.log(name +' send messenge: '+msg);
-        var targetIndex = onlineUser.indexOf(target);
-        //console.log(targetIndex);
-        if(targetIndex != -1)
-            io.sockets.connected[onlineId[targetIndex]].emit('chat message', sender, msg);
+        //console.log(sender +' send secret messenge to -> '+target);
+        var targetId = getListKey(target);
+        //console.log("get target key: "+getListKey(target));
+
+        if(targetId != -1)
+            io.sockets.connected[targetId].emit('chat message', sender, msg);
         else
         {
-            var senderIndex = onlineUser.indexOf(sender);
-            msg = "can't find mamber \""+target+"\" online, please try again";
+            msg = "can't find member \""+target+"\" online, please try again";
             console.log(msg);
-            io.sockets.connected[onlineId[senderIndex]].emit('chat message', '<system>', msg);
-
+            io.sockets.connected[socket.id].emit('chat message', '<system>', msg);
         }
     });
 
     //聆聽斷開鎖練
     socket.on('disconnect', function(){
-        var byeIndex = onlineId.indexOf(socket.id);
-        DisconnectLog(onlineUser[byeIndex]);
-        io.emit('disconnected', onlineUser[byeIndex]+" has leave us...");
-        onlineId.splice(byeIndex, 1);
-        onlineUser.splice(byeIndex, 1);
         console.log(socket.id + ' disconnected');
-        console.log(onlineUser);
-        console.log(onlineUser.length);
+        //DisconnectLog(list[socket.id]);
+        io.emit('disconnected', list[socket.id]+" has leave us...");
+        delete list[socket.id];
+        console.log(list);
     });
 
     //聆聽DB莫名斷線
-    connection.on('error', function(err) {
+    pool.on('error', function(err) {
         if (!err.fatal) {
             return;
         }
@@ -180,9 +197,16 @@ io.on('connection', function(socket){
 
         console.log('Re-connecting lost connection: ' + err.stack);
 
-        connection = mysql.createConnection(connection.config);
-        handleDisconnect(connection);
-        connection.connect();
+
+        pool = mysql.createPool({
+            host: "localhost",
+            user: "root",
+            password: "",
+            database: "test"
+        });
+        pool.getConnection(function(err, connection) {
+            // connected! (unless `err` is set)
+        });
     });
 });
 
