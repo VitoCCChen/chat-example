@@ -2,8 +2,13 @@ var app = require('express')();
 var http = require('http').Server(app);
 var io = require('socket.io')(http);
 var port = process.env.PORT || 3000;
+const low = require('lowdb');
+const Memory = require('lowdb/adapters/Memory');
+const db = low(new Memory);
+//db.defaults({ posts: [] }).write();
 
 var list = [];
+var roomList = [];
 
 var mysql      = require('mysql');
 /*var connection = mysql.createConnection({
@@ -26,11 +31,11 @@ pool.getConnection(function(err, connection) {
 });
 
 //將聊天紀錄存入DB
-function ChatLog(name, msg){
+function ChatLog(name, msg, room){
     //connection doent have to reconnet DB everytime
     //connection.connect();
     var table = 'chat';
-    var data = { name: name, log: msg };
+    var data = { name: name, log: msg, room: room};
     var q = pool.query('INSERT INTO ?? SET ?', [table, data], function (error, results, fields) {
         //[try] to release
         //connection.release();
@@ -40,38 +45,43 @@ function ChatLog(name, msg){
     //console.log(q.sql);
     //connection.end();
 
-    return q;
-};
+    db.get('room'+room).push({ name: name, log: msg}).write();
+    //console.log(db.get('room'+room).value());
 
-//將聊天紀錄存入DB
-function ConnectLog(name){
-    ChatLog(name, ' connected');
+    return q;
 }
 
 //將上線紀錄存入DB
-function DisconnectLog(name){
-    ChatLog(name, ' Disconnected');
+function ConnectLog(name, room){
+    ChatLog(name, ' connected', room);
 }
 
-function getlastindex(callback) {
+//將離線紀錄存入DB
+function DisconnectLog(name, room){
+    ChatLog(name, ' Disconnected', room);
+}
+
+function getlastindex(callback){
     pool.query('SELECT COUNT(id) AS countrow FROM chat', function (error, results, fields) {
         if (error) throw error;
 
-        console.log('row count '+ results[0].countrow);
+        //console.log('row count '+ results[0].countrow);
 
         if(callback instanceof Function)  callback(results[0].countrow);
     });
 }
 
 //抓舊聊天紀錄
-function getHistoryChat(callback){
+function getHistoryChat(room, callback){
     var lim = 10 ;
+    console.log('room in function', room);
 
     //現在用不到兩層callback, 但先留著參考
     getlastindex( function(index){
         index -= lim;
         //pool.query('SELECT ?? FROM ?? LIMIT ? OFFSET ? ORDER BY ?? DESC',[['name', 'log'],'chat', lim, index, 'id'], function (error, results, fields) {
-        pool.query('SELECT ?? FROM ?? ORDER BY ?? DESC LIMIT ?',[['name', 'log'],'chat', 'id', lim], function (error, results, fields) {
+        //pool.query('SELECT ?? FROM ?? WHERE ??=? ORDER BY ?? DESC LIMIT ?',[['name', 'log'],'chat', 'room', room, 'id', lim], function (error, results, fields) {
+        pool.query('SELECT ?? FROM ?? WHERE ??=?',[['name', 'log'],'chat', 'room', room], function (error, results, fields) {
             if (error) throw error;
 
             if(callback instanceof Function)  callback(results);
@@ -97,27 +107,64 @@ app.get('/', function(req, res){
 io.on('connection', function(socket){
     var userinfo = {};
     var username = socket.handshake.query.name;
+    var userroom;
 
-    //[try]deloye each room
-    var program = [];
-    /*if(roomList[program_id])
-    {
-        //chat room exist, do nothing
-    }
-    else {
-        socket.on('program'+program_id, function(name, msg){
-            console.log(name +' send messenge: '+msg);
+    //建立目前上線名單，不分房間
+    list[socket.id] = username;
+    console.log(list);
 
-            console.log( ChatLog(name, msg).sql + " function callback");
+    //分配房間，並show該房間歷史紀錄
+    socket.on('create', function(room) {
+        socket.join(room);
+        console.log("created room: ",room);
+        userroom = room;
 
-            io.emit('chat message', name, msg);
-        });
-    }*/
+        var roomisNew = false;
+        if(roomList.indexOf(room) == -1)
+        {
+            roomisNew = true;
+            roomList.push(room);
+        }
 
-    //上線連線測試
+        //ConnectLog(username, userroom);
+
+        //[try]送給新user歷史紀錄
+        var hisLog = [];
+
+        if(roomisNew){
+            getHistoryChat(userroom, function(results){
+                db.set('room'+userroom, results).write();
+                hisLog = db.get('room'+userroom).value();
+
+                console.log('log from mysql');
+                //console.log('log form mysql ',hisLog);
+                //console.log('value: ', db.get('posts').value());
+                //console.log(hisLog.length);
+
+                io.sockets.connected[socket.id].emit('load history'+userroom, hisLog);
+            });
+        }
+        else{
+            hisLog = db.get('room'+userroom).value();
+
+            console.log('log from memory');
+            //console.log('log from memory ',hisLog);
+            //console.log('value: ',db.get('posts').value());
+
+            io.sockets.connected[socket.id].emit('load history'+userroom, hisLog);
+        }
+
+    });
+
+    //聆聽收到有人進來且跑完歷史訊息
+    socket.on('welcome', function(name){
+        console.log(name, 'in');
+        io.emit('connected'+userroom, name+" is in, let's say hello!!");
+    });
+
+    //DB上線連線測試
     //console.log(username + ' connected into db with id: ' + pool.threadId);
-    //ConnectLog(username);
-    io.emit('connected', username+" is in, let's say hello!!");
+
     //[try]當重複名稱要求重新輸入
     /*if(onlineUser.indexOf(username) == -1)
     {
@@ -131,33 +178,20 @@ io.on('connection', function(socket){
         return false;
     }*/
 
-    //建立目前上線名單
-    list[socket.id] = username;
-    console.log(list);
-
-    //[try]送給新user歷史紀錄
-    var hisLog = [];
-    getHistoryChat(function(results){
-        hisLog = results;
-        //console.log(hisLog);
-        console.log(hisLog.length);
-
-        io.sockets.connected[socket.id].emit('load history', hisLog);
-    });
-
     //聆聽收到訊息
     socket.on('chat message', function(name, msg){
         console.log(name +' send messenge: '+msg);
 
-        console.log( ChatLog(name, msg).sql + " function callback");
+        ChatLog(name, msg, userroom);
+        //console.log( ChatLog(name, msg, userroom).sql + " function callback");
 
-      io.emit('chat message', name, msg);
+      io.emit('chat message'+userroom, name, msg);
     });
 
     //聆聽誰正在輸入，目前只有show在web console
     socket.on('typing', function(name){
         //console.log(name +' chatting messenge: '+msg);
-        io.emit('whoistyping', name);
+        io.emit('whoistyping'+userroom, name);
     });
 
     //聆聽傳遞私訊
@@ -167,20 +201,20 @@ io.on('connection', function(socket){
         //console.log("get target key: "+getListKey(target));
 
         if(targetId != -1)
-            io.sockets.connected[targetId].emit('chat message', sender, msg);
+            io.sockets.connected[targetId].emit('chat message'+userroom, sender, msg);
         else
         {
             msg = "can't find member \""+target+"\" online, please try again";
             console.log(msg);
-            io.sockets.connected[socket.id].emit('chat message', '<system>', msg);
+            io.sockets.connected[socket.id].emit('chat message'+userroom, '<system>', msg);
         }
     });
 
     //聆聽斷開鎖練
     socket.on('disconnect', function(){
         console.log(socket.id + ' disconnected');
-        //DisconnectLog(list[socket.id]);
-        io.emit('disconnected', list[socket.id]+" has leave us...");
+        //DisconnectLog(list[socket.id], userroom);
+        io.emit('disconnected'+userroom, list[socket.id]+" has leave us...");
         delete list[socket.id];
         console.log(list);
     });

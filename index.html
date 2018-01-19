@@ -30,25 +30,15 @@
               name = prompt("請問您叫什麼名子", "");
           }while(name == null || name == "");
 
+          var room;
+          room = prompt("room?", "");
+          document.title = "Socket.IO chat room "+ room;
+
           var socket = io.connect('', {query: 'name='+name});
-
-
-          //[try]send messenge when Enter
-          /*$('#form').onkeypress(function(e){
-              if (e.which == 13)
-                  console.log("enter is press by "+name);
-                //$('#send').click();
-              return false;
-          });*/
-
-          /*document.onkeydown=function(){
-              if(window.event.keyCode=='13'){
-                  console.log("enter is press by "+name);
-              }
-          };*/
-
+          socket.emit('create', room);
 
           <!--region client send event to server-->
+          //send message
           $('#send').click(function(){
               if($('#s').val() != "" && $('#m').val() != "")
               {
@@ -68,66 +58,76 @@
               return false;
           });
 
+          //let user could clear the message board
           $('#clear').click(function(){
               $('#messages').text("");
               return false;
           });
 
-          $('#m').on('keyup', function(){
+          //let user send message with enter
+          $('#m').on('keypress',function(e){
+              if (e.which == 13){
+                  console.log("enter is press by "+name);
+                  $('#send').trigger('click');
+                  return false;
+              }
+          });//*/
+
+          /*$('#m').on('keyup', function(){
               socket.emit('typing', name);
-              //$('#messages').append($('<li>').text('someone is typing'));
-              //return false;
+              $('#messages').append($('<li>').text('someone is typing'));
+              return false;
           });//*/
           <!--endregion-->
 
 
           <!--region client listen event from server-->
-          socket.on('connected', function(msg){
+          socket.on('connected'+room, function(msg){
               $('#messages').append($('<li>').text(msg));
               window.scrollTo(0, document.body.scrollHeight);
           });
 
-          socket.on('changename', function(username){
+          //[try]ask user to a nickname
+          /*socket.on('changename', function(username){
               do {
                   name = prompt(username + " has been used, please change a name :)");
               }while(name == null || name == "");
 
               socket = io.connect('', {query: 'name='+name});
-          });
+          });*/
 
-          socket.on('chat message', function(name, msg){
+          socket.on('chat message'+room, function(name, msg){
             $('#messages').append($('<li>').text(name+": "+msg));
             window.scrollTo(0, document.body.scrollHeight);
           });
 
+          //[try] to listen who is typing
           socket.on('whoistyping', function(name){
               console.log(name + " is typing...");
-
           });
 
 
-          socket.on('disconnected', function(msg){
+          socket.on('disconnected'+room, function(msg){
               $('#messages').append($('<li>').text(msg));
               window.scrollTo(0, document.body.scrollHeight);
           });
 
-          socket.on('load history', function(history){
+          socket.on('load history'+room, function(history){
               history.forEach(
                 function(value, index){
                   msg = value.name+': '+value.log;
-                  $('#messages').prepend($('<li>').text(msg));
+                  //$('#messages').prepend($('<li>').text(msg));
+                    $('#messages').append($('<li>').text(msg));
                   window.scrollTo(0, document.body.scrollHeight);//*/
 
               });
+
+              console.log('history done');
+              socket.emit('welcome', name);
               //var container = document.getElementById('li');
               //msg.insertBefore(document.createElement($('<li>').text(msg)), container.firstChild);
           });
           <!--endregion-->
-
-
-
-
-
 
         });
     </script>
