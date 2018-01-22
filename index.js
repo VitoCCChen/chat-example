@@ -5,19 +5,12 @@ var port = process.env.PORT || 3000;
 const low = require('lowdb');
 const Memory = require('lowdb/adapters/Memory');
 const db = low(new Memory);
-//db.defaults({ posts: [] }).write();
+//db.defaults({ rooms: [] }).write();
 
-var list = [];
+var userinfo = [];
 var roomList = [];
 
 var mysql      = require('mysql');
-/*var connection = mysql.createConnection({
-        "host": "localhost",
-        "user": "root",
-        "password": "",
-        "database": "test"
-    });
-connection.connect();*/
 
 var pool  = mysql.createPool({
     host: "localhost",
@@ -89,9 +82,10 @@ function getHistoryChat(room, callback){
     });
 }
 
+//以value抓取array的key值
 function getListKey(targetvalue){
-    for (var key in list) {
-        var value = list[key];
+    for (var key in userinfo) {
+        var value = userinfo[key];
 
         if(value == targetvalue)
             return key;
@@ -105,13 +99,12 @@ app.get('/', function(req, res){
 
 //聆聽連結
 io.on('connection', function(socket){
-    var userinfo = {};
     var username = socket.handshake.query.name;
     var userroom;
 
     //建立目前上線名單，不分房間
-    list[socket.id] = username;
-    console.log(list);
+    userinfo[socket.id] = username;
+    console.log(userinfo);
 
     //分配房間，並show該房間歷史紀錄
     socket.on('create', function(room) {
@@ -213,10 +206,10 @@ io.on('connection', function(socket){
     //聆聽斷開鎖練
     socket.on('disconnect', function(){
         console.log(socket.id + ' disconnected');
-        //DisconnectLog(list[socket.id], userroom);
-        io.emit('disconnected'+userroom, list[socket.id]+" has leave us...");
-        delete list[socket.id];
-        console.log(list);
+        //DisconnectLog(userinfo[socket.id], userroom);
+        io.emit('disconnected'+userroom, userinfo[socket.id]+" has leave us...");
+        delete userinfo[socket.id];
+        console.log(userinfo);
     });
 
     //聆聽DB莫名斷線
