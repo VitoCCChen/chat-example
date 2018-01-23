@@ -5,12 +5,9 @@ var port = process.env.PORT || 3000;
 const low = require('lowdb');
 const Memory = require('lowdb/adapters/Memory');
 const db = low(new Memory);
-//db.defaults({ rooms: [] }).write();
+db.defaults({ rooms: {} }).write();
 
-var userinfo = [];
-var roomList = [];
-
-var mysql      = require('mysql');
+var mysql = require('mysql');
 
 var pool  = mysql.createPool({
     host: "localhost",
@@ -27,9 +24,11 @@ pool.getConnection(function(err, connection) {
 function ChatLog(name, msg, room){
     //connection doent have to reconnet DB everytime
     //connection.connect();
-    var table = 'chat';
-    var data = { name: name, log: msg, room: room};
-    var q = pool.query('INSERT INTO ?? SET ?', [table, data], function (error, results, fields) {
+    var table = 'chat2';
+    var sRoom = room.split("-");
+    var record = name+':'+msg;
+    var data = {cl_pgram_id: sRoom[0], cl_record_id: sRoom[1], cl_record: record, cl_lastmanage: 'user'};
+    var q = pool.query('INSERT INTO ?? SET ?,cl_creatdate=CURRENT_TIME()', [table, data], function (error, results, fields) {
         //[try] to release
         //connection.release();
 
@@ -38,7 +37,8 @@ function ChatLog(name, msg, room){
     //console.log(q.sql);
     //connection.end();
 
-    db.get('room'+room).push({ name: name, log: msg}).write();
+    var insert = db.get('rooms.room'+room+'.msg').push({ cl_record: record}).write();
+    //console.log('insert',insert);
     //console.log(db.get('room'+room).value());
 
     return q;
@@ -67,14 +67,17 @@ function getlastindex(callback){
 //抓舊聊天紀錄
 function getHistoryChat(room, callback){
     var lim = 10 ;
-    console.log('room in function', room);
+    //console.log('room in function', room);
+
+    var sRoom = room.split("-");
 
     //現在用不到兩層callback, 但先留著參考
     getlastindex( function(index){
         index -= lim;
         //pool.query('SELECT ?? FROM ?? LIMIT ? OFFSET ? ORDER BY ?? DESC',[['name', 'log'],'chat', lim, index, 'id'], function (error, results, fields) {
         //pool.query('SELECT ?? FROM ?? WHERE ??=? ORDER BY ?? DESC LIMIT ?',[['name', 'log'],'chat', 'room', room, 'id', lim], function (error, results, fields) {
-        pool.query('SELECT ?? FROM ?? WHERE ??=?',[['name', 'log'],'chat', 'room', room], function (error, results, fields) {
+        //pool.query('SELECT ?? FROM ?? WHERE ??=?',[['name', 'log'],'chat2', 'room', room], function (error, results, fields) {
+        pool.query('SELECT ?? FROM ?? WHERE ??=? AND ??=?',['cl_record','chat2', 'cl_pgram_id', sRoom[0], 'cl_record_id', sRoom[1]], function (error, results, fields) {
             if (error) throw error;
 
             if(callback instanceof Function)  callback(results);
@@ -83,11 +86,13 @@ function getHistoryChat(room, callback){
 }
 
 //以value抓取array的key值
-function getListKey(targetvalue){
-    for (var key in userinfo) {
-        var value = userinfo[key];
+function getListKey(arr, targetValue){
+    //console.log('userlist',arr);
 
-        if(value == targetvalue)
+    for (var key in arr) {
+        var value = arr[key];
+
+        if(value === targetValue)
             return key;
     }
     return -1;
@@ -99,26 +104,25 @@ app.get('/', function(req, res){
 
 //聆聽連結
 io.on('connection', function(socket){
+    var userId = socket.id;
     var username = socket.handshake.query.name;
     var userroom;
-
-    //建立目前上線名單，不分房間
-    userinfo[socket.id] = username;
-    console.log(userinfo);
 
     //分配房間，並show該房間歷史紀錄
     socket.on('create', function(room) {
         socket.join(room);
-        console.log("created room: ",room);
+
         userroom = room;
 
         var roomisNew = false;
-        if(roomList.indexOf(room) == -1)
+        if(!db.get('rooms').has('room'+userroom).value())
         {
             roomisNew = true;
-            roomList.push(room);
+
+            console.log("created room: ",room);
         }
 
+        //紀錄上線進DB
         //ConnectLog(username, userroom);
 
         //[try]送給新user歷史紀錄
@@ -126,50 +130,65 @@ io.on('connection', function(socket){
 
         if(roomisNew){
             getHistoryChat(userroom, function(results){
-                db.set('room'+userroom, results).write();
-                hisLog = db.get('room'+userroom).value();
+                //設定房間名稱
+                db.get('rooms').set('room'+userroom, {} ).write();
 
+                //設定並加入使用者
+                db.get('rooms.room'+userroom).set("member", {} ).write();
+                db.get('rooms.room'+userroom+'.member').set(userId, username).write();
+
+                //從DB加入該房間的歷史紀錄
+                hisLog = db.get('rooms.room'+userroom).set("msg", results ).write();
+
+                //請使用者loading 這些歷史訊息
+                io.sockets.connected[userId].emit('load history'+userroom, hisLog);
+
+                //console.log(results);
+                //console.log("whole table",db.get('rooms').value());
+                //console.log("history",hisLog);
                 console.log('log from mysql');
-                //console.log('log form mysql ',hisLog);
-                //console.log('value: ', db.get('posts').value());
-                //console.log(hisLog.length);
-
-                io.sockets.connected[socket.id].emit('load history'+userroom, hisLog);
             });
         }
         else{
-            hisLog = db.get('room'+userroom).value();
+            //從暫存DB加入該房間的歷史訊息
+            hisLog = db.get('rooms.room'+userroom).value();
+
+
+            //將使用者加入該房間上線名單
+            var tempObject = {};
+            tempObject[userId] = username;
+            db.get('rooms.room'+userroom+'.member').set(userId, username).write();
+            //db.get('rooms.room'+userroom+'.member').push(tempObject).write();
+            //var insert = db.get('rooms.room'+room+'.msg').push({ cl_record: record}).write();
+
+            //請使用者loading 房間的歷史訊息
+            io.sockets.connected[userId].emit('load history'+userroom, hisLog);
 
             console.log('log from memory');
+            //console.log("whole table",db.get('rooms').value());
             //console.log('log from memory ',hisLog);
-            //console.log('value: ',db.get('posts').value());
-
-            io.sockets.connected[socket.id].emit('load history'+userroom, hisLog);
         }
-
     });
 
     //聆聽收到有人進來且跑完歷史訊息
     socket.on('welcome', function(name){
-        console.log(name, 'in');
         io.emit('connected'+userroom, name+" is in, let's say hello!!");
+
+        var roomInfo = 'Room '+userroom+', currently Online: '+db.get('rooms.room'+userroom+'.member').size().value()+ '|';
+        for(var key in db.get('rooms.room'+userroom+'.member').value()){
+            roomInfo += ' '+ db.get('rooms.room'+userroom+'.member.'+key).value() + ',';
+        }
+        io.emit('update roomInfo'+userroom, roomInfo);
+
+        console.log('user: ', name, 'in');
+        console.log('update member ', db.get('rooms.room'+userroom+'.member').value());
+        //console.log(db.get('rooms.room'+userroom+'.member').value());
+        //console.log(db.get('rooms.room'+userroom+'.msg').size().value());
+        //console.log(db.get('rooms').size().value());
     });
 
     //DB上線連線測試
     //console.log(username + ' connected into db with id: ' + pool.threadId);
-
-    //[try]當重複名稱要求重新輸入
-    /*if(onlineUser.indexOf(username) == -1)
-    {
-        console.log(username + ' connected');
-        io.emit('connected', username+" is in, let's say hello!!");
-    }
-    else
-    {
-        console.log(socket.id + ' is changing name');
-        io.sockets.connected[socket.id].emit('changename', username);
-        return false;
-    }*/
 
     //聆聽收到訊息
     socket.on('chat message', function(name, msg){
@@ -189,9 +208,7 @@ io.on('connection', function(socket){
 
     //聆聽傳遞私訊
     socket.on('secret message', function(sender, target, msg){
-        //console.log(sender +' send secret messenge to -> '+target);
-        var targetId = getListKey(target);
-        //console.log("get target key: "+getListKey(target));
+        var targetId = getListKey(db.get('rooms.room'+userroom+'.member').value(),target);
 
         if(targetId != -1)
             io.sockets.connected[targetId].emit('chat message'+userroom, sender, msg);
@@ -199,17 +216,20 @@ io.on('connection', function(socket){
         {
             msg = "can't find member \""+target+"\" online, please try again";
             console.log(msg);
-            io.sockets.connected[socket.id].emit('chat message'+userroom, '<system>', msg);
+            io.sockets.connected[userId].emit('chat message'+userroom, '<system>', msg);
         }
+
+        //console.log(sender +' send secret messenge to -> '+target);
     });
 
     //聆聽斷開鎖練
     socket.on('disconnect', function(){
-        console.log(socket.id + ' disconnected');
-        //DisconnectLog(userinfo[socket.id], userroom);
-        io.emit('disconnected'+userroom, userinfo[socket.id]+" has leave us...");
-        delete userinfo[socket.id];
-        console.log(userinfo);
+        var Passenger = 'rooms.room'+userroom+'.member.'+userId;
+
+        console.log(userId+ ': ' + db.get(Passenger).value()+ ' disconnected');
+        io.emit('disconnected'+userroom, db.get(Passenger).value()+" has leave us...");
+        db.unset('rooms.room'+userroom+'.member.'+userId).write();
+        console.log('update member ', db.get('rooms.room'+userroom+'.member').value());
     });
 
     //聆聽DB莫名斷線
