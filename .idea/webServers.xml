@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="316c3320-2165-480f-89d3-a101bd3ccb56" name="52.197.45.208" url="http://52.197.45.208">
+        <fileTransfer host="52.197.45.208" port="22" privateKey="C:\Users\user\Desktop\Third-Party-Payment-Test.pem" rootFolder="/var/www/html" accessType="SFTP" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+          <option name="port" value="22" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

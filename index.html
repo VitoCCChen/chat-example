@@ -18,7 +18,7 @@
     <ul id="messages"></ul>
     <form action="" id="form">
       <input id="r" readonly="true" placeholder="上線名單">
-      <input id="s" autocomplete="off" placeholder="試著私訊別人"/><button id="clear">Clear</button>
+      <!-- <input id="s" autocomplete="off" placeholder="試著私訊別人"/><button id="clear">Clear</button> -->
       <input id="m" autocomplete="off"/><button id="send">Send</button>
     </form>
     <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
@@ -42,12 +42,12 @@
           <!--region client send event to server-->
           //send message
           $('#send').click(function(){
-              if($('#s').val() != "" && $('#m').val() != "")
+              /*if($('#s').val() != "" && $('#m').val() != "")
               {
                   socket.emit('secret message', name, $('#s').val(), $('#m').val());
                   $('#m').val('');
                   return false;
-              }
+              }*/
 
               if($('#m').val() != "")
               {

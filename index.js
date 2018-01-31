@@ -13,7 +13,7 @@ var pool  = mysql.createPool({
     host: "localhost",
     user: "root",
     password: "",
-    database: "test"
+    database: "manage"
 });
 
 pool.getConnection(function(err, connection) {
@@ -24,7 +24,7 @@ pool.getConnection(function(err, connection) {
 function ChatLog(name, msg, room){
     //connection doent have to reconnet DB everytime
     //connection.connect();
-    var table = 'chat2';
+    var table = 'program_chatroom';
     var sRoom = room.split("-");
     var record = name+':'+msg;
     var data = {cl_pgram_id: sRoom[0], cl_record_id: sRoom[1], cl_record: record, cl_lastmanage: 'user'};
@@ -55,7 +55,7 @@ function DisconnectLog(name, room){
 }
 
 function getlastindex(callback){
-    pool.query('SELECT COUNT(id) AS countrow FROM chat', function (error, results, fields) {
+    pool.query('SELECT COUNT(cl_id) AS countrow FROM program_chatroom', function (error, results, fields) {
         if (error) throw error;
 
         //console.log('row count '+ results[0].countrow);
@@ -77,7 +77,7 @@ function getHistoryChat(room, callback){
         //pool.query('SELECT ?? FROM ?? LIMIT ? OFFSET ? ORDER BY ?? DESC',[['name', 'log'],'chat', lim, index, 'id'], function (error, results, fields) {
         //pool.query('SELECT ?? FROM ?? WHERE ??=? ORDER BY ?? DESC LIMIT ?',[['name', 'log'],'chat', 'room', room, 'id', lim], function (error, results, fields) {
         //pool.query('SELECT ?? FROM ?? WHERE ??=?',[['name', 'log'],'chat2', 'room', room], function (error, results, fields) {
-        pool.query('SELECT ?? FROM ?? WHERE ??=? AND ??=?',['cl_record','chat2', 'cl_pgram_id', sRoom[0], 'cl_record_id', sRoom[1]], function (error, results, fields) {
+        pool.query('SELECT ?? FROM ?? WHERE ??=? AND ??=?',['cl_record','program_chatroom', 'cl_pgram_id', sRoom[0], 'cl_record_id', sRoom[1]], function (error, results, fields) {
             if (error) throw error;
 
             if(callback instanceof Function)  callback(results);
