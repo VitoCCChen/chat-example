@@ -201,6 +201,8 @@ io.on('connection', function(socket){
         console.log(userId+ ': ' + db.get(Passenger).value()+ ' disconnected');
         //io.emit('disconnected'+userroom, db.get(Passenger).value()+" has leave us...");
         db.unset('rooms.room'+userroom+'.member.'+userId).write();
+        if(db.get('rooms.room'+userroom+'.member').size().value() == 0)
+            db.unset('rooms.room'+userroom).write();
         console.log('update member ', db.get('rooms.room'+userroom+'.member').value());
     });
 
