@@ -26,8 +26,7 @@ function ChatLog(name, msg, mem_id, room){
     //connection.connect();
     var table = 'program_chatroom';
     var sRoom = room.split("-");
-    var record = name+':'+msg;
-    var data = {cl_pgram_id: sRoom[0], cl_record_id: sRoom[1], cl_record: record, cl_mem_id: mem_id, cl_lastmanage: 'user'};
+    var data = {cl_pgram_id: sRoom[0], cl_record_id: sRoom[1], cl_sender: name, cl_msg: msg, cl_mem_id: mem_id, cl_lastmanage: 'user'};
     var q = pool.query('INSERT INTO ?? SET ?,cl_creatdate=CURRENT_TIME()', [table, data], function (error, results, fields) {
         //[try] to release
         //connection.release();
@@ -63,7 +62,7 @@ function getHistoryChat(room, callback){
         //pool.query('SELECT ?? FROM ?? WHERE ??=? ORDER BY ?? DESC LIMIT ?',[['name', 'log'],'chat', 'room', room, 'id', lim], function (error, results, fields) {
         //pool.query('SELECT ?? FROM ?? WHERE ??=?',[['name', 'log'],'chat2', 'room', room], function (error, results, fields) {
         //pool.query('SELECT ?? FROM ?? WHERE ??=? AND ??=?',['cl_record','program_chatroom', 'cl_pgram_id', sRoom[0], 'cl_record_id', sRoom[1]], function (error, results, fields) {
-        pool.query('SELECT ??, ??, ?? FROM ?? LEFT JOIN ?? ON ??=?? WHERE ??=? AND ??=? ORDER BY ??',['cl_record', 'url_photo', 'cl_creatdate','program_chatroom', 'member', 'member_id', 'cl_mem_id', 'cl_pgram_id', sRoom[0], 'cl_record_id', sRoom[1], 'cl_creatdate'], function (error, results, fields) {
+        pool.query('SELECT ??, ??, ??, ?? FROM ?? LEFT JOIN ?? ON ??=?? WHERE ??=? AND ??=? ORDER BY ??',['cl_sender', 'cl_msg', 'url_photo', 'cl_creatdate','program_chatroom', 'member', 'member_id', 'cl_mem_id', 'cl_pgram_id', sRoom[0], 'cl_record_id', sRoom[1], 'cl_creatdate'], function (error, results, fields) {
             if (error) throw error;
 
             if(callback instanceof Function)  callback(results);
@@ -92,8 +91,9 @@ app.get('/', function(req, res){
 io.on('connection', function(socket){
     var userId = socket.id;
     var username = socket.handshake.query.name;
-    var userroom;
+    var userroom = socket.handshake.query.room;
 
+    socket.join(userroom);
 
     socket.on('login', function(changedName){
 	username = changedName;
@@ -108,7 +108,6 @@ io.on('connection', function(socket){
 
     //分配房間，並show該房間歷史紀錄
     socket.on('create', function(room) {
-        socket.join(room);
 
         userroom = room;
 
@@ -189,8 +188,7 @@ io.on('connection', function(socket){
         console.log(name +' send messenge: '+msg);
 
         ChatLog(name, msg, mem_id, userroom);
-        //console.log( ChatLog(name, msg, userroom).sql + " function callback");
-        var insert = db.get('rooms.room'+userroom+'.msg').push({ cl_record: name+':'+msg, url_photo: pic, cl_creatdate:new Date()}).write();
+        var insert = db.get('rooms.room'+userroom+'.msg').push({ cl_sender: name, cl_msg: msg, url_photo: pic, cl_creatdate:new Date()}).write();
         console.log(insert);
 
         io.emit('chat message'+userroom, name, msg, pic);
@@ -201,7 +199,7 @@ io.on('connection', function(socket){
         var Passenger = 'rooms.room'+userroom+'.member.'+userId;
 
         console.log(userId+ ': ' + db.get(Passenger).value()+ ' disconnected');
-        io.emit('disconnected'+userroom, db.get(Passenger).value()+" has leave us...");
+        //io.emit('disconnected'+userroom, db.get(Passenger).value()+" has leave us...");
         db.unset('rooms.room'+userroom+'.member.'+userId).write();
         console.log('update member ', db.get('rooms.room'+userroom+'.member').value());
     });
